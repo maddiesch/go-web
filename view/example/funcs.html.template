@@ -1,0 +1,34 @@
+{{ define "body" }}
+  <div class="funcs-demo">
+    <h1>Template Functions Demo</h1>
+
+    <section id="strings">
+      <h2>Strings</h2>
+      <p id="upper">{{ upper .Name }}</p>
+      <p id="lower">{{ lower .Name }}</p>
+      <p id="truncated">{{ truncate 8 .Name }}</p>
+      <p id="joined">{{ join .Tags ", " }}</p>
+      <p id="contains">{{ ternary "yes" "no" (contains .Name "World") }}</p>
+      <p id="replaced">{{ replace .Name "World" "Go" }}</p>
+    </section>
+
+    <section id="logic">
+      <h2>Logic</h2>
+      <p id="default-val">{{ default "anonymous" .Username }}</p>
+      <p id="ternary-val">{{ ternary "active" "inactive" .Active }}</p>
+    </section>
+
+    <section id="math">
+      <h2>Math</h2>
+      <p id="add-val">{{ add .Count 10 }}</p>
+      <p id="sub-val">{{ sub .Count 3 }}</p>
+      <p id="mod-val">{{ mod .Count 4 }}</p>
+    </section>
+
+    <section id="time">
+      <h2>Time</h2>
+      <p id="time-ago">{{ timeAgo .CreatedAt }}</p>
+      <p id="formatted">{{ formatTime "2006-01-02" .CreatedAt }}</p>
+    </section>
+  </div>
+{{ end }}
