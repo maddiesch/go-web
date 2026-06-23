@@ -1,21 +1,25 @@
 package view
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"io/fs"
 	"log/slog"
+	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 type Provider struct {
-	ViewFS  fs.FS
-	Include []string
-	Layout  string
-	Func    template.FuncMap
+	ViewFS        fs.FS
+	Include       []string
+	Layout        string
+	Func          template.FuncMap
+	ErrorTemplate string
 
 	cacheMu sync.RWMutex
 	cache   map[string]*template.Template
@@ -113,11 +117,12 @@ func NewProvider(viewFS fs.FS) *Provider {
 	}
 
 	return &Provider{
-		ViewFS:  viewFS,
-		Include: []string{"include/*.html.template"},
-		Layout:  "_layout.html.template",
-		Func:    funcMap,
-		cache:   make(map[string]*template.Template),
+		ViewFS:        viewFS,
+		Include:       []string{"include/*.html.template"},
+		Layout:        "_layout.html.template",
+		Func:          funcMap,
+		ErrorTemplate: "errors/error-{{status}}.html",
+		cache:         make(map[string]*template.Template),
 	}
 }
 
@@ -150,4 +155,36 @@ func (p *Provider) Render(w io.Writer, name string, data any) error {
 	}
 
 	return tmpl.ExecuteTemplate(w, p.Layout, data)
+}
+
+type RenderErrorData struct {
+	ErrorMessage string
+	StatusCode   int
+	StatusText   string
+	UserData     any
+}
+
+func (p *Provider) RenderError(w http.ResponseWriter, status int, sourceErr error, data any) {
+	name := strings.ReplaceAll(p.ErrorTemplate, "{{status}}", strconv.FormatInt(int64(status), 10))
+
+	_, err := fs.Stat(p.ViewFS, name+".template")
+	if errors.Is(err, fs.ErrNotExist) {
+		name = strings.ReplaceAll(p.ErrorTemplate, "{{status}}", "default")
+	}
+
+	content := RenderErrorData{
+		ErrorMessage: sourceErr.Error(),
+		StatusCode:   status,
+		StatusText:   http.StatusText(status),
+		UserData:     data,
+	}
+
+	w.WriteHeader(status)
+	p.Render(w, name, content)
+}
+
+func (p *Provider) ResetCache() {
+	p.cacheMu.Lock()
+	p.cache = make(map[string]*template.Template)
+	p.cacheMu.Unlock()
 }

@@ -1,0 +1,7 @@
+{{ define "body" }}
+  <div>
+    <h1>404 Error Page - {{ .StatusCode }} {{ .StatusText }}</h1>
+  </div>
+
+  <p>{{ .ErrorMessage }}</p>
+{{ end }}

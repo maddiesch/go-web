@@ -3,7 +3,10 @@ package view_test
 import (
 	"bytes"
 	"embed"
+	"errors"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -43,6 +46,58 @@ func TestProviderRender(t *testing.T) {
 	assert.Contains(t, out2, "<h1>Landing Page</h1>")
 	assert.Contains(t, out2, "<!DOCTYPE html>")
 	assert.NotContains(t, out2, "<p>")
+}
+
+func TestRenderError(t *testing.T) {
+	sub, err := fs.Sub(exampleFS, "example")
+	require.NoError(t, err)
+
+	p := view.NewProvider(sub)
+
+	t.Run("uses status-specific template when it exists", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		p.RenderError(w, http.StatusNotFound, errors.New("page not found"), nil)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Contains(t, w.Body.String(), "404 Error Page")
+		assert.Contains(t, w.Body.String(), "page not found")
+	})
+
+	t.Run("falls back to default template when status-specific is missing", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		p.RenderError(w, http.StatusInternalServerError, errors.New("something exploded"), nil)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Contains(t, w.Body.String(), "Error Page")
+		assert.Contains(t, w.Body.String(), "something exploded")
+	})
+
+	t.Run("populates RenderErrorData fields", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		p.RenderError(w, http.StatusNotFound, errors.New("missing resource"), nil)
+
+		body := w.Body.String()
+		assert.Contains(t, body, "404")
+		assert.Contains(t, body, "Not Found")
+		assert.Contains(t, body, "missing resource")
+	})
+
+	t.Run("sets correct status code in response", func(t *testing.T) {
+		for _, status := range []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError} {
+			w := httptest.NewRecorder()
+			p.RenderError(w, status, errors.New("err"), nil)
+			assert.Equal(t, status, w.Code)
+		}
+	})
+
+	t.Run("passes user data through", func(t *testing.T) {
+		type userData struct{ RequestID string }
+
+		w := httptest.NewRecorder()
+		p.RenderError(w, http.StatusNotFound, errors.New("not found"), userData{RequestID: "abc-123"})
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
 }
 
 func TestProviderFuncMap(t *testing.T) {
