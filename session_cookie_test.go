@@ -87,6 +87,32 @@ func TestSignedCookieDefaults(t *testing.T) {
 	assert.Equal(t, http.SameSiteLaxMode, c.SameSite)
 }
 
+func TestSignedCookieValueWithDot(t *testing.T) {
+	cfg := testSignedCookieConfig()
+
+	w := httptest.NewRecorder()
+	require.NoError(t, web.WriteSignedCookie(w, cfg, "a.b.c"))
+
+	r := &http.Request{Header: http.Header{"Cookie": w.Result().Header["Set-Cookie"]}}
+	got, err := web.ReadSignedCookie(r, cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "a.b.c", got)
+}
+
+func TestSignedCookieWeakKey(t *testing.T) {
+	cfg := testSignedCookieConfig()
+	cfg.Key = []byte("too-short")
+
+	w := httptest.NewRecorder()
+	err := web.WriteSignedCookie(w, cfg, "hello")
+	assert.ErrorIs(t, err, web.ErrWeakKey)
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&http.Cookie{Name: cfg.Name, Value: "hello.sig"})
+	_, err = web.ReadSignedCookie(r, cfg)
+	assert.ErrorIs(t, err, web.ErrWeakKey)
+}
+
 func TestWriteReadSession(t *testing.T) {
 	cfg := testSignedCookieConfig()
 	session := &web.Session{ID: "user-abc"}

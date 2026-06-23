@@ -15,11 +15,23 @@ import (
 var (
 	ErrSignedCookieNotFound = errors.New("signed cookie not found")
 	ErrSignedCookieInvalid  = errors.New("signed cookie invalid")
+	ErrWeakKey              = errors.New("signing key too short")
 )
 
+// minSigningKeyLength is the minimum acceptable HMAC key size, matching the
+// SHA-256 output size. Shorter keys weaken the signature and are rejected.
+const minSigningKeyLength = 32
+
 // SignedCookieConfig holds cookie identity and signing parameters.
+//
+// Cookies are signed, not encrypted: the value is tamper-proof but readable by
+// anyone who holds the cookie. Never store secrets in a session you persist
+// here — the CSRF token is safe because it isn't a cross-site bearer secret.
+//
+// There is no key rotation: changing Key invalidates every existing cookie.
 type SignedCookieConfig struct {
-	Name     string
+	Name string
+	// Key signs the cookie via HMAC-SHA256 and must be at least 32 bytes.
 	Key      []byte
 	Path     string
 	Domain   string
@@ -92,13 +104,16 @@ func signCookieValue(name string, key []byte, value string) (string, error) {
 }
 
 func verifyCookieValue(name string, key []byte, raw string) (string, error) {
-	value, sig, ok := strings.Cut(raw, ".")
-	if !ok {
+	// Split on the last "." — the signature is base64url and never contains a
+	// dot, so this is robust even when value itself does.
+	i := strings.LastIndex(raw, ".")
+	if i < 0 {
 		return "", ErrSignedCookieInvalid
 	}
+	value, sig := raw[:i], raw[i+1:]
 	expected, err := cookieHMAC(name, key, value)
 	if err != nil {
-		return "", ErrSignedCookieInvalid
+		return "", err
 	}
 	if !hmac.Equal([]byte(sig), []byte(expected)) {
 		return "", ErrSignedCookieInvalid
@@ -107,6 +122,9 @@ func verifyCookieValue(name string, key []byte, raw string) (string, error) {
 }
 
 func cookieHMAC(name string, key []byte, value string) (string, error) {
+	if len(key) < minSigningKeyLength {
+		return "", ErrWeakKey
+	}
 	mac := hmac.New(sha256.New, key)
 	if _, err := mac.Write([]byte(name + "|" + value)); err != nil {
 		return "", err
@@ -115,13 +133,18 @@ func cookieHMAC(name string, key []byte, value string) (string, error) {
 }
 
 // Session is the structured value stored in the session cookie.
+//
+// Data is signed but not encrypted — do not store secrets in it.
 type Session struct {
-	ID        string         `json:"id"`
+	ID string `json:"id"`
+	// ExpiresAt bounds server-side validity. A zero value never expires, so
+	// set it unless you intend a session that only ends with the cookie.
 	ExpiresAt time.Time      `json:"expires_at,omitzero"`
 	Data      map[string]any `json:"data,omitempty"`
 }
 
 // Valid returns true when the session has a non-empty ID and hasn't expired.
+// A zero ExpiresAt is treated as never-expiring.
 func (s *Session) Valid() bool {
 	if s == nil || s.ID == "" {
 		return false
