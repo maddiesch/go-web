@@ -21,7 +21,7 @@ type Provider struct {
 	Layout        string
 	Func          template.FuncMap
 	ErrorTemplate string
-	ErrorLogger   func(error)
+	ErrorLogger   func(error, string, any)
 
 	cacheMu sync.RWMutex
 	cache   map[string]*template.Template
@@ -121,7 +121,7 @@ func NewProvider(viewFS fs.FS) *Provider {
 		Layout:        "_layout.html.template",
 		Func:          funcMap,
 		ErrorTemplate: "errors/error-{{status}}.html",
-		ErrorLogger:   func(err error) {},
+		ErrorLogger:   nil,
 		cache:         make(map[string]*template.Template),
 	}
 }
@@ -156,7 +156,7 @@ func (p *Provider) Render(w io.Writer, name string, data any) error {
 
 	if err := tmpl.ExecuteTemplate(w, p.Layout, data); err != nil {
 		if p.ErrorLogger != nil {
-			p.ErrorLogger(err)
+			p.ErrorLogger(err, name, data)
 		}
 
 		return err
