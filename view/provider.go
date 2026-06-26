@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -103,13 +104,10 @@ func NewProvider(viewFS fs.FS) *Provider {
 			return s[len(s)-1]
 		},
 		"len": func(s any) int {
-			switch v := s.(type) {
-			case string:
-				return len(v)
-			case []any:
-				return len(v)
-			case map[string]any:
-				return len(v)
+			rv := reflect.ValueOf(s)
+			switch rv.Kind() {
+			case reflect.Slice, reflect.Array, reflect.Map, reflect.String:
+				return rv.Len()
 			default:
 				return 0
 			}
