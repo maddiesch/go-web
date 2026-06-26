@@ -21,6 +21,7 @@ type Provider struct {
 	Layout        string
 	Func          template.FuncMap
 	ErrorTemplate string
+	ErrorLogger   func(error)
 
 	cacheMu sync.RWMutex
 	cache   map[string]*template.Template
@@ -120,6 +121,7 @@ func NewProvider(viewFS fs.FS) *Provider {
 		Layout:        "_layout.html.template",
 		Func:          funcMap,
 		ErrorTemplate: "errors/error-{{status}}.html",
+		ErrorLogger:   func(err error) {},
 		cache:         make(map[string]*template.Template),
 	}
 }
@@ -152,7 +154,15 @@ func (p *Provider) Render(w io.Writer, name string, data any) error {
 		p.cacheMu.Unlock()
 	}
 
-	return tmpl.ExecuteTemplate(w, p.Layout, data)
+	if err := tmpl.ExecuteTemplate(w, p.Layout, data); err != nil {
+		if p.ErrorLogger != nil {
+			p.ErrorLogger(err)
+		}
+
+		return err
+	}
+
+	return nil
 }
 
 type RenderErrorData struct {
@@ -162,7 +172,7 @@ type RenderErrorData struct {
 	UserData     any
 }
 
-func (p *Provider) RenderError(w http.ResponseWriter, status int, sourceErr error, data any) {
+func (p *Provider) RenderError(w http.ResponseWriter, status int, sourceErr error, data any) error {
 	name := strings.ReplaceAll(p.ErrorTemplate, "{{status}}", strconv.FormatInt(int64(status), 10))
 
 	_, err := fs.Stat(p.ViewFS, name+".template")
@@ -178,7 +188,8 @@ func (p *Provider) RenderError(w http.ResponseWriter, status int, sourceErr erro
 	}
 
 	w.WriteHeader(status)
-	p.Render(w, name, content)
+
+	return p.Render(w, name, content)
 }
 
 func (p *Provider) ResetCache() {
